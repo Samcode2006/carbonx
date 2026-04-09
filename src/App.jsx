@@ -10,6 +10,11 @@ import Dashboard from './pages/Dashboard';
 import Leaderboard from './pages/Leaderboard';
 import Rewards from './pages/Rewards';
 import Ledger from './pages/Ledger';
+import Seed from './pages/Seed';
+
+function WithNav({ children }) {
+  return <><Navbar />{children}</>;
+}
 
 export default function App() {
   return (
@@ -17,36 +22,13 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Navbar /><Home />
-            </ProtectedRoute>
-          } />
-          <Route path="/upload" element={
-            <ProtectedRoute>
-              <Navbar /><Upload />
-            </ProtectedRoute>
-          } />
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Navbar /><Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/leaderboard" element={
-            <ProtectedRoute>
-              <Navbar /><Leaderboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/rewards" element={
-            <ProtectedRoute>
-              <Navbar /><Rewards />
-            </ProtectedRoute>
-          } />
-          <Route path="/ledger" element={
-            <ProtectedRoute>
-              <Navbar /><Ledger />
-            </ProtectedRoute>
-          } />
+          <Route path="/" element={<ProtectedRoute><WithNav><Home /></WithNav></ProtectedRoute>} />
+          <Route path="/upload" element={<ProtectedRoute><WithNav><Upload /></WithNav></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><WithNav><Dashboard /></WithNav></ProtectedRoute>} />
+          <Route path="/leaderboard" element={<ProtectedRoute><WithNav><Leaderboard /></WithNav></ProtectedRoute>} />
+          <Route path="/rewards" element={<ProtectedRoute><WithNav><Rewards /></WithNav></ProtectedRoute>} />
+          <Route path="/ledger" element={<ProtectedRoute><WithNav><Ledger /></WithNav></ProtectedRoute>} />
+          <Route path="/seed" element={<ProtectedRoute><WithNav><Seed /></WithNav></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
