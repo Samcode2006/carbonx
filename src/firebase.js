@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDr3X93_Wwim_u-93lRLCUJjGxmxBScXFo",
@@ -16,4 +17,15 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functions = getFunctions(app);
+
+// Uncomment this line to test with local emulator:
+// connectFunctionsEmulator(functions, 'localhost', 5001);
+
+// Cloud Function callables
+export const verifyEcoActionFn    = httpsCallable(functions, 'verifyEcoAction');
+export const saveEcoActionFn      = httpsCallable(functions, 'saveEcoAction');
+export const getLeaderboardFn     = httpsCallable(functions, 'getLeaderboard');
+export const generateSuggestionsFn = httpsCallable(functions, 'generateAISuggestions');
+
 export default app;

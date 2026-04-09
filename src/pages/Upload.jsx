@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, addDoc, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { calculateCO2, getCO2Description } from '../utils/carbonCalculator';
 import { verifyAction } from '../utils/aiVerification';
+import { saveAction } from '../utils/saveAction';
 import { runAntiCheatChecks } from '../utils/antiCheat';
 import { getLevel } from '../utils/xpSystem';
 import { Upload as UploadIcon, Image, Video, CheckCircle, XCircle, MapPin, AlertTriangle } from 'lucide-react';
@@ -100,32 +99,23 @@ export default function Upload() {
   async function handleSave() {
     if (!result?.verified) return;
     setStep('saving');
-    try {
-      const newXP = (userData?.xp || 0) + co2;
-      const newLevel = newXP >= 1500 ? 3 : newXP >= 500 ? 2 : 1;
 
-      await addDoc(collection(db, 'actions'), {
-        userId: currentUser.uid,
-        type: actionType,
-        co2,
-        distance: Number(distance) || 0,
-        filename: file.name,
-        fileType: fileType,
-        timestamp: serverTimestamp(),
-        location: location || null,
-        verified: true,
-      });
+    const res = await saveAction({
+      userId: currentUser.uid,
+      type: actionType,
+      co2,
+      distance: Number(distance) || 0,
+      filename: file.name,
+      fileType: fileType,
+      location,
+      userData,
+    });
 
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        xp: increment(co2),
-        co2Saved: increment(co2),
-        level: newLevel,
-      });
-
+    if (res.success) {
       await refreshUserData(currentUser.uid);
       setStep('done');
-    } catch (err) {
-      setError('Failed to save: ' + err.message);
+    } else {
+      setError(res.error || 'Failed to save action.');
       setStep('error');
     }
   }
