@@ -2,14 +2,14 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// 🔥 Replace with your Firebase project config
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDr3X93_Wwim_u-93lRLCUJjGxmxBScXFo",
+  authDomain: "timber-by.firebaseapp.com",
+  databaseURL: "https://timber-by-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "timber-by",
+  storageBucket: "timber-by.firebasestorage.app",
+  messagingSenderId: "205819620991",
+  appId: "1:205819620991:web:550bc86f2ef41109db194a"
 };
 
 const app = initializeApp(firebaseConfig);
