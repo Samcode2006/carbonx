@@ -7,30 +7,9 @@ import { formatCO2 } from '../utils/carbonCalculator';
 import { generateSuggestions } from '../utils/suggestions';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Leaf, Zap, Trophy, Target, TrendingUp, Lightbulb } from 'lucide-react';
+import { checkStravaConnection } from '../utils/stravaIntegration';
 
 const COLORS = ['#A3E635', '#60A5FA', '#FDE047', '#FB7185', '#A3E635', '#60A5FA', '#FDE047'];
-
-function StatCard({ icon, label, value, sub, color }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="nb-card"
-      style={{ padding: 24, borderTop: `4px solid ${color}` }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>{label}</div>
-          <div style={{ fontSize: 32, fontWeight: 900 }}>{value}</div>
-          {sub && <div style={{ fontSize: 12, color: '#888', marginTop: 4, fontWeight: 600 }}>{sub}</div>}
-        </div>
-        <div style={{ background: color, border: '2px solid #000', borderRadius: 8, padding: 10, boxShadow: '2px 2px 0px #000' }}>
-          {icon}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
 
 export default function Dashboard() {
   const { currentUser, userData } = useAuth();
@@ -39,6 +18,21 @@ export default function Dashboard() {
   const [rank, setRank] = useState('—');
   const [loading, setLoading] = useState(true);
   const [suggestions, setSuggestions] = useState([]);
+  const [stravaConnected, setStravaConnected] = useState(false);
+
+  // Helper function to extract action type from action_type string
+  const getActionTypeFromString = (actionType) => {
+    if (!actionType) return 'eco-action';
+
+    const type = actionType.toLowerCase();
+    if (type.includes('cycling') || type.includes('ride') || type.includes('bike')) return 'cycling';
+    if (type.includes('bus') || type.includes('transport')) return 'bus';
+    if (type.includes('recycling') || type.includes('recycle')) return 'recycling';
+    if (type.includes('walk') || type.includes('walking')) return 'walking';
+    if (type.includes('run') || type.includes('running')) return 'running';
+
+    return 'eco-action';
+  };
 
   useEffect(() => {
     if (!currentUser) {
@@ -46,10 +40,15 @@ export default function Dashboard() {
       return;
     }
 
+    // Check Strava connection
+    checkStravaConnection(currentUser.id).then(({ connected }) => {
+      setStravaConnected(connected);
+    });
+
     // Set a timeout to prevent infinite loading
     const timeout = setTimeout(() => {
       setLoading(false);
-    }, 5000); // 5 second timeout
+    }, 5000);
 
     // Fetch recent actions from Supabase
     const fetchActions = async () => {
@@ -111,7 +110,7 @@ export default function Dashboard() {
           const transformedEntry = {
             id: newEntry.id,
             type: getActionTypeFromString(newEntry.action_type),
-            co2: newEntry.co2_saved * 1000, // Convert kg to grams
+            co2: newEntry.co2_saved * 1000,
             xp: newEntry.xp_earned,
             timestamp: new Date(newEntry.created_at),
             verification: newEntry.verification_method,
@@ -119,33 +118,20 @@ export default function Dashboard() {
             location: newEntry.metadata?.location || null,
           };
 
-          setActions(prev => [transformedEntry, ...prev.slice(0, 19)]); // Keep only 20 most recent
+          setActions(prev => [transformedEntry, ...prev.slice(0, 19)]);
         }
       )
       .subscribe();
 
     return () => {
       subscription.unsubscribe();
+      clearTimeout(timeout);
     };
   }, [currentUser, userData]);
 
-  // Helper function to extract action type from action_type string
-  const getActionTypeFromString = (actionType) => {
-    if (!actionType) return 'eco-action';
-
-    const type = actionType.toLowerCase();
-    if (type.includes('cycling') || type.includes('ride') || type.includes('bike')) return 'cycling';
-    if (type.includes('bus') || type.includes('transport')) return 'bus';
-    if (type.includes('recycling') || type.includes('recycle')) return 'recycling';
-    if (type.includes('walk') || type.includes('walking')) return 'walking';
-    if (type.includes('run') || type.includes('running')) return 'running';
-
-    return 'eco-action';
-  };
-
   // Fetch rank
   useEffect(() => {
-    if (!userData) return;
+    if (!userData || !currentUser) return;
 
     const fetchRank = async () => {
       try {
@@ -187,7 +173,7 @@ export default function Dashboard() {
   }
 
   if (!userData) return (
-    <div style={{ minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F5F5F0' }}>
       <div style={{ textAlign: 'center' }}>
         <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} style={{ fontSize: 40, display: 'inline-block', marginBottom: 12 }}>⚙️</motion.div>
         <div style={{ fontWeight: 700 }}>Loading dashboard...</div>
@@ -200,61 +186,123 @@ export default function Dashboard() {
   const lvl = getLevel(xp);
   const progress = getLevelProgress(xp);
   const xpToNext = getXPToNextLevel(xp);
+  const actionsToday = actions.filter(a => {
+    if (!a.timestamp) return false;
+    const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
+    return (Date.now() - ts) < 86400000;
+  }).length;
 
   return (
-    <div style={{ background: '#F5F5F0', minHeight: 'calc(100vh - 64px)', padding: '40px 24px' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto' }}>
+    <div style={{ background: '#F5F5F0', minHeight: 'calc(100vh - 64px)', padding: '32px 24px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 48 }}>{getLevelBadge(userData.level || 1)}</span>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ marginBottom: 24 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span style={{ fontSize: 32 }}>{getLevelBadge(userData.level || 1)}</span>
             <div>
-              <h1 style={{ fontWeight: 900, fontSize: 28, letterSpacing: -0.5 }}>Welcome back, {userData.name?.split(' ')[0]}!</h1>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                <span className="nb-badge" style={{ background: lvl.color }}>Level {userData.level || 1}: {lvl.label}</span>
-                <span className="nb-badge" style={{ background: '#FDE047' }}>{rank} on Leaderboard</span>
+              <h1 style={{ fontWeight: 900, fontSize: 24, margin: 0 }}>Welcome back, {userData.name?.split(' ')[0]}!</h1>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <span style={{
+                  background: lvl.color,
+                  border: '2px solid #000',
+                  borderRadius: 6,
+                  padding: '2px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  boxShadow: '2px 2px 0px #000'
+                }}>
+                  Level {userData.level || 1}: {lvl.label}
+                </span>
+                <span style={{
+                  background: '#FDE047',
+                  border: '2px solid #000',
+                  borderRadius: 6,
+                  padding: '2px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  boxShadow: '2px 2px 0px #000'
+                }}>
+                  {rank} on Leaderboard
+                </span>
               </div>
+            </div>
+          </div>
+
+          {/* XP Progress Bar */}
+          <div className="nb-card" style={{ padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13, fontWeight: 700 }}>
+              <span>⚡ XP Progress — Level {userData.level || 1} → {(userData.level || 1) + 1}</span>
+              <span style={{ color: '#666' }}>{xp} XP · {xpToNext > 0 ? `${xpToNext} to next level` : 'Max level!'}</span>
+            </div>
+            <div className="nb-progress-track">
+              <motion.div
+                className="nb-progress-fill"
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 1, ease: 'easeOut' }}
+                style={{ background: lvl.color }}
+              />
             </div>
           </div>
         </motion.div>
 
-        {/* XP Progress Bar */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-          className="nb-card" style={{ padding: 24, marginBottom: 28 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontWeight: 700 }}>
-            <span>⚡ XP Progress — Level {userData.level || 1} → {(userData.level || 1) + 1}</span>
-            <span style={{ color: '#666', fontSize: 13 }}>{xp} XP · {xpToNext > 0 ? `${xpToNext} to next level` : 'Max level!'}</span>
-          </div>
-          <div className="nb-progress-track">
-            <motion.div
-              className="nb-progress-fill"
-              initial={{ width: 0 }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 1, delay: 0.3, ease: 'easeOut' }}
-              style={{ background: lvl.color }}
-            />
-          </div>
-        </motion.div>
-
         {/* Stats Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, marginBottom: 28 }}>
-          <StatCard icon={<Leaf size={22} />} label="CO₂ Saved" value={formatCO2(co2)} sub="Total lifetime savings" color="#A3E635" />
-          <StatCard icon={<Zap size={22} />} label="Total XP" value={`${xp.toLocaleString()} XP`} sub="1g CO₂ = 1 XP" color="#FDE047" />
-          <StatCard icon={<Trophy size={22} />} label="Rank" value={rank} sub={`out of ${rank !== '—' ? rank.replace('#', '') + '+ users' : 'users'}`} color="#FB7185" />
-          <StatCard icon={<Target size={22} />} label="Actions" value={actions.length} sub={`${actions.filter(a => {
-            if (!a.timestamp) return false;
-            const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
-            return (Date.now() - ts) < 86400000;
-          }).length} today`} color="#60A5FA" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <StatCard
+            icon={<Leaf size={24} />}
+            label="CO₂ SAVED"
+            value={formatCO2(co2)}
+            sub="Total lifetime savings"
+            color="#A3E635"
+          />
+          <StatCard
+            icon={<Zap size={24} />}
+            label="TOTAL XP"
+            value={`${xp} XP`}
+            sub="1g CO₂ = 1 XP"
+            color="#FDE047"
+          />
+          <StatCard
+            icon={<Trophy size={24} />}
+            label="RANK"
+            value={rank}
+            sub="out of users"
+            color="#FB7185"
+          />
+          <StatCard
+            icon={<Target size={24} />}
+            label="ACTIONS"
+            value={actions.length}
+            sub={`${actionsToday} today`}
+            color="#60A5FA"
+          />
+          <StatCard
+            icon={<span style={{ fontSize: 20 }}>🚴</span>}
+            label="STRAVA"
+            value={stravaConnected ? "Live" : "—"}
+            sub={stravaConnected ? "Rides tracked" : "Import rides"}
+            color="#FC4C02"
+          />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, marginBottom: 24 }}>
+        {/* Charts and Suggestions */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginBottom: 24 }}>
           {/* Weekly Chart */}
-          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
-            className="nb-card" style={{ padding: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className="nb-card"
+            style={{ padding: 20 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <TrendingUp size={18} />
-              <h2 style={{ fontWeight: 800, fontSize: 16 }}>Weekly CO₂ Savings (g)</h2>
+              <h2 style={{ fontWeight: 800, fontSize: 16, margin: 0 }}>Weekly CO₂ Savings (g)</h2>
             </div>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={weeklyData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
@@ -272,67 +320,78 @@ export default function Dashboard() {
           </motion.div>
 
           {/* AI Suggestions */}
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}
-            className="nb-card" style={{ padding: 24 }}>
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3 }}
+            className="nb-card"
+            style={{ padding: 20 }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               <Lightbulb size={18} />
-              <h2 style={{ fontWeight: 800, fontSize: 16 }}>AI Suggestions</h2>
+              <h2 style={{ fontWeight: 800, fontSize: 16, margin: 0 }}>AI Suggestions</h2>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {suggestions.map((s, i) => (
-                <motion.div key={i} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 + i * 0.1 }}
-                  style={{ background: ['#A3E635', '#FDE047', '#60A5FA', '#FB7185'][i % 4], border: '2px solid #000', borderRadius: 8, padding: '10px 12px', fontSize: 12, fontWeight: 600, lineHeight: 1.4, boxShadow: '2px 2px 0px #000' }}>
+              {suggestions.length > 0 ? suggestions.map((s, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + i * 0.1 }}
+                  style={{
+                    background: ['#A3E635', '#FDE047', '#60A5FA', '#FB7185'][i % 4],
+                    border: '2px solid #000',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    lineHeight: 1.4,
+                    boxShadow: '2px 2px 0px #000'
+                  }}
+                >
                   {s}
                 </motion.div>
-              ))}
+              )) : (
+                <div style={{ textAlign: 'center', padding: 20, color: '#999', fontSize: 13 }}>
+                  Start logging actions to get personalized suggestions!
+                </div>
+              )}
             </div>
           </motion.div>
         </div>
-
-        {/* Recent Actions */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-          <h2 style={{ fontWeight: 800, fontSize: 18, marginBottom: 16 }}>Recent Actions</h2>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 40, fontWeight: 700, color: '#999' }}>Loading actions...</div>
-          ) : actions.length === 0 ? (
-            <div className="nb-card" style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
-              <div style={{ fontWeight: 700 }}>No actions yet. Upload your first eco-action!</div>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="nb-table">
-                <thead>
-                  <tr>
-                    <th>Action</th>
-                    <th>CO₂ Saved</th>
-                    <th>XP</th>
-                    <th>Date</th>
-                    <th>Location</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {actions.slice(0, 10).map(a => {
-                    const icons = { cycling: '🚴', bus: '🚌', recycling: '♻️', walking: '🚶', running: '🏃', 'eco-action': '🌱' };
-                    const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
-                    return (
-                      <tr key={a.id}>
-                        <td style={{ fontWeight: 700 }}>{icons[a.type] || '🌱'} {a.type}</td>
-                        <td><span style={{ background: '#A3E635', border: '1px solid #000', borderRadius: 4, padding: '2px 8px', fontWeight: 800, fontSize: 13 }}>{Math.round(a.co2)}g</span></td>
-                        <td><span style={{ background: '#FDE047', border: '1px solid #000', borderRadius: 4, padding: '2px 8px', fontWeight: 800, fontSize: 13 }}>+{a.xp}</span></td>
-                        <td style={{ color: '#666', fontSize: 13 }}>{ts.toLocaleDateString()}</td>
-                        <td style={{ fontSize: 12, color: '#888' }}>{a.location ? `${a.location.lat?.toFixed(3)}, ${a.location.lng?.toFixed(3)}` : '—'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </motion.div>
       </div>
-
-      <style>{`@media (max-width: 768px) { .dash-grid { grid-template-columns: 1fr !important; } }`}</style>
     </div>
+  );
+}
+
+function StatCard({ icon, label, value, sub, color }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ scale: 1.02 }}
+      className="nb-card"
+      style={{ padding: 16, position: 'relative', overflow: 'hidden' }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 24, fontWeight: 900, marginBottom: 2 }}>{value}</div>
+          <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>{sub}</div>
+        </div>
+        <div style={{
+          background: color,
+          border: '2px solid #000',
+          borderRadius: 8,
+          padding: 8,
+          boxShadow: '2px 2px 0px #000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          {icon}
+        </div>
+      </div>
+    </motion.div>
   );
 }
