@@ -16,7 +16,6 @@ export default function Dashboard() {
   const [actions, setActions] = useState([]);
   const [weeklyData, setWeeklyData] = useState([]);
   const [rank, setRank] = useState('—');
-  const [loading, setLoading] = useState(true);
   const [suggestions, setSuggestions] = useState([]);
   const [stravaConnected, setStravaConnected] = useState(false);
 
@@ -36,19 +35,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!currentUser) {
-      setLoading(false);
       return;
     }
 
     // Check Strava connection
     checkStravaConnection(currentUser.id).then(({ connected }) => {
       setStravaConnected(connected);
+    }).catch(err => {
+      console.error('Error checking Strava connection:', err);
+      setStravaConnected(false);
     });
-
-    // Set a timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 5000);
 
     // Fetch recent actions from Supabase
     const fetchActions = async () => {
@@ -63,8 +59,6 @@ export default function Dashboard() {
         if (error) {
           console.error('Error fetching actions:', error);
           setActions([]);
-          setLoading(false);
-          clearTimeout(timeout);
           return;
         }
 
@@ -83,13 +77,9 @@ export default function Dashboard() {
         setActions(transformedActions);
         buildWeeklyData(transformedActions);
         if (userData) setSuggestions(generateSuggestions(userData, transformedActions));
-        setLoading(false);
-        clearTimeout(timeout);
       } catch (error) {
         console.error('Error fetching actions:', error);
         setActions([]);
-        setLoading(false);
-        clearTimeout(timeout);
       }
     };
 
@@ -125,7 +115,6 @@ export default function Dashboard() {
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(timeout);
     };
   }, [currentUser, userData]);
 
@@ -181,8 +170,8 @@ export default function Dashboard() {
     </div>
   );
 
-  const xp = userData.xp || 0;
-  const co2 = userData.co2Saved || 0;
+  const xp = userData?.xp || 0;
+  const co2 = userData?.co2Saved || 0;
   const lvl = getLevel(xp);
   const progress = getLevelProgress(xp);
   const xpToNext = getXPToNextLevel(xp);
@@ -205,7 +194,7 @@ export default function Dashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
             <span style={{ fontSize: 32 }}>{getLevelBadge(userData.level || 1)}</span>
             <div>
-              <h1 style={{ fontWeight: 900, fontSize: 24, margin: 0 }}>Welcome back, {userData.name?.split(' ')[0]}!</h1>
+              <h1 style={{ fontWeight: 900, fontSize: 24, margin: 0 }}>Welcome back, {userData?.name?.split(' ')[0] || 'User'}!</h1>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <span style={{
                   background: lvl.color,
@@ -216,7 +205,7 @@ export default function Dashboard() {
                   fontWeight: 800,
                   boxShadow: '2px 2px 0px #000'
                 }}>
-                  Level {userData.level || 1}: {lvl.label}
+                  Level {userData?.level || 1}: {lvl.label}
                 </span>
                 <span style={{
                   background: '#FDE047',
@@ -236,7 +225,7 @@ export default function Dashboard() {
           {/* XP Progress Bar */}
           <div className="nb-card" style={{ padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13, fontWeight: 700 }}>
-              <span>⚡ XP Progress — Level {userData.level || 1} → {(userData.level || 1) + 1}</span>
+              <span>⚡ XP Progress — Level {userData?.level || 1} → {(userData?.level || 1) + 1}</span>
               <span style={{ color: '#666' }}>{xp} XP · {xpToNext > 0 ? `${xpToNext} to next level` : 'Max level!'}</span>
             </div>
             <div className="nb-progress-track">
