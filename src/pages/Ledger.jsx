@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCO2 } from '../utils/carbonCalculator';
 import { Link2, Shield, Clock } from 'lucide-react';
 
 function hashId(id) {
-  // Simulate a blockchain hash from a Firestore doc ID
-  return '0x' + id.slice(0, 8).toUpperCase() + '...' + id.slice(-4).toUpperCase();
+  // Simulate a blockchain hash from a Supabase UUID
+  return '0x' + id.replace(/-/g, '').slice(0, 8).toUpperCase() + '...' + id.replace(/-/g, '').slice(-4).toUpperCase();
 }
 
 export default function Ledger() {
@@ -18,20 +17,111 @@ export default function Ledger() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(
-      collection(db, 'actions'),
-      where('userId', '==', currentUser.uid),
-      orderBy('timestamp', 'desc')
-    );
-    const unsub = onSnapshot(q, snap => {
-      setActions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    });
-    return unsub;
+
+    // Fetch ledger entries from Supabase
+    const fetchLedgerEntries = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ledger_entries')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching ledger entries:', error);
+          return;
+        }
+
+        // Transform Supabase data to match the expected format
+        const transformedActions = data.map(entry => ({
+          id: entry.id,
+          type: getActionTypeFromString(entry.action_type),
+          co2: entry.co2_saved,
+          xp: entry.xp_earned,
+          timestamp: new Date(entry.created_at),
+          verification: entry.verification_method,
+          distance: entry.metadata?.distance_km || null,
+          location: entry.metadata?.location || null,
+          imageUrl: entry.image_url,
+          stravaActivityId: entry.strava_activity_id,
+        }));
+
+        setActions(transformedActions);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching ledger entries:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchLedgerEntries();
+
+    // Set up real-time subscription for new entries
+    const subscription = supabase
+      .channel('ledger_entries')
+      .on('postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'ledger_entries',
+          filter: `user_id=eq.${currentUser.id}`
+        },
+        (payload) => {
+          const newEntry = payload.new;
+          const transformedEntry = {
+            id: newEntry.id,
+            type: getActionTypeFromString(newEntry.action_type),
+            co2: newEntry.co2_saved,
+            xp: newEntry.xp_earned,
+            timestamp: new Date(newEntry.created_at),
+            verification: newEntry.verification_method,
+            distance: newEntry.metadata?.distance_km || null,
+            location: newEntry.metadata?.location || null,
+            imageUrl: newEntry.image_url,
+            stravaActivityId: newEntry.strava_activity_id,
+          };
+
+          setActions(prev => [transformedEntry, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [currentUser]);
 
-  const ACTION_ICONS = { cycling: '🚴', bus: '🚌', recycling: '♻️' };
-  const ACTION_COLORS = { cycling: '#A3E635', bus: '#60A5FA', recycling: '#FDE047' };
+  // Helper function to extract action type from action_type string
+  const getActionTypeFromString = (actionType) => {
+    if (!actionType) return 'unknown';
+
+    const type = actionType.toLowerCase();
+    if (type.includes('cycling') || type.includes('ride') || type.includes('bike')) return 'cycling';
+    if (type.includes('bus') || type.includes('transport')) return 'bus';
+    if (type.includes('recycling') || type.includes('recycle')) return 'recycling';
+    if (type.includes('walk') || type.includes('walking')) return 'walking';
+    if (type.includes('run') || type.includes('running')) return 'running';
+
+    return 'eco-action';
+  };
+
+  const ACTION_ICONS = {
+    cycling: '🚴',
+    bus: '🚌',
+    recycling: '♻️',
+    walking: '🚶',
+    running: '🏃',
+    'eco-action': '🌱'
+  };
+
+  const ACTION_COLORS = {
+    cycling: '#A3E635',
+    bus: '#60A5FA',
+    recycling: '#FDE047',
+    walking: '#34D399',
+    running: '#F87171',
+    'eco-action': '#A78BFA'
+  };
 
   return (
     <div style={{ background: '#F5F5F0', minHeight: 'calc(100vh - 64px)', padding: '40px 24px' }}>
@@ -113,7 +203,20 @@ export default function Ledger() {
                           <Link2 size={11} /> {hashId(a.id)}
                         </div>
                         <div style={{ fontWeight: 900, fontSize: 16, textTransform: 'capitalize' }}>
-                          {a.type} Action
+                          {a.type.replace('-', ' ')} Action
+                          {a.verification && (
+                            <span style={{
+                              marginLeft: 8,
+                              fontSize: 11,
+                              background: a.verification === 'Strava' ? '#FF6B35' : a.verification === 'AI Image' ? '#9333EA' : '#6B7280',
+                              color: 'white',
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              fontWeight: 600
+                            }}>
+                              {a.verification}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
@@ -127,9 +230,9 @@ export default function Ledger() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                       {[
                         { label: 'CO₂ Saved', val: formatCO2(a.co2 || 0), color },
-                        { label: 'XP Earned', val: `+${a.co2 || 0} XP`, color: '#FDE047' },
-                        { label: 'Distance', val: a.distance ? `${a.distance} km` : 'N/A', color: '#E5E5E5' },
-                        { label: 'Timestamp', val: ts.toLocaleString(), color: '#F5F5F0', small: true },
+                        { label: 'XP Earned', val: `+${a.xp || 0} XP`, color: '#FDE047' },
+                        { label: 'Distance', val: a.distance ? `${a.distance.toFixed(1)} km` : 'N/A', color: '#E5E5E5' },
+                        { label: 'Timestamp', val: a.timestamp.toLocaleString(), color: '#F5F5F0', small: true },
                       ].map((f, fi) => (
                         <div key={fi} style={{ background: f.color, border: '2px solid #000', borderRadius: 6, padding: '8px 12px', boxShadow: '2px 2px 0px #000' }}>
                           <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, opacity: 0.6 }}>{f.label}</div>

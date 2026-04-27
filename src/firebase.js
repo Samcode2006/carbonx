@@ -1,31 +1,46 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
+// Temporary Firebase stub file
+// This file provides stub exports to prevent import errors during Supabase migration
+// TODO: Complete migration of remaining files to Supabase and remove this file
 
-const firebaseConfig = {
-  apiKey: "AIzaSyDr3X93_Wwim_u-93lRLCUJjGxmxBScXFo",
-  authDomain: "timber-by.firebaseapp.com",
-  databaseURL: "https://timber-by-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "timber-by",
-  storageBucket: "timber-by.firebasestorage.app",
-  messagingSenderId: "205819620991",
-  appId: "1:205819620991:web:550bc86f2ef41109db194a"
+console.warn('⚠️ Firebase stub file loaded. Please complete Supabase migration for full functionality.');
+
+// Stub database export
+export const db = {
+    // Placeholder object to prevent errors
+    collection: () => ({
+        doc: () => ({
+            set: () => Promise.resolve(),
+            get: () => Promise.resolve({ exists: () => false, data: () => ({}) }),
+            update: () => Promise.resolve(),
+        }),
+        add: () => Promise.resolve({ id: 'stub-id' }),
+        where: () => ({ get: () => Promise.resolve({ docs: [] }) }),
+    }),
 };
 
-const app = initializeApp(firebaseConfig);
+// Stub auth export  
+export const auth = {
+    currentUser: null,
+    onAuthStateChanged: () => () => { }, // Return unsubscribe function
+    signInWithEmailAndPassword: () => Promise.reject(new Error('Firebase auth not configured')),
+    createUserWithEmailAndPassword: () => Promise.reject(new Error('Firebase auth not configured')),
+    signOut: () => Promise.reject(new Error('Firebase auth not configured')),
+};
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const functions = getFunctions(app);
+// Stub cloud functions
+export const saveEcoActionFn = () => {
+    console.warn('saveEcoActionFn called but not implemented. Please migrate to Supabase.');
+    return Promise.reject(new Error('Function not implemented - migrate to Supabase'));
+};
 
-// Uncomment this line to test with local emulator:
-// connectFunctionsEmulator(functions, 'localhost', 5001);
+export const verifyEcoActionFn = () => {
+    console.warn('verifyEcoActionFn called but not implemented. Please migrate to Supabase.');
+    return Promise.reject(new Error('Function not implemented - migrate to Supabase'));
+};
 
-// Cloud Function callables
-export const verifyEcoActionFn    = httpsCallable(functions, 'verifyEcoAction');
-export const saveEcoActionFn      = httpsCallable(functions, 'saveEcoAction');
-export const getLeaderboardFn     = httpsCallable(functions, 'getLeaderboard');
-export const generateSuggestionsFn = httpsCallable(functions, 'generateAISuggestions');
-
-export default app;
+// Note: This is a temporary solution.
+// For full functionality, complete the migration to Supabase by:
+// 1. Updating src/utils/saveAction.js to use Supabase
+// 2. Updating src/pages/Rewards.jsx to use Supabase
+// 3. Updating src/utils/aiVerification.js to use Supabase
+// 4. Removing this file and Firebase dependency

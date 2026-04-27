@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { doc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { CheckCircle, ShoppingBag, AlertCircle } from 'lucide-react';
 
@@ -50,13 +49,34 @@ export default function Rewards() {
     if (xp < reward.xpCost) return;
     setRedeeming(reward.id);
     setError('');
+
     try {
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        xp: increment(-reward.xpCost),
-      });
-      await refreshUserData(currentUser.uid);
+      // Create a redemption record in the ledger
+      const { error: ledgerError } = await supabase
+        .from('ledger_entries')
+        .insert([{
+          user_id: currentUser.id,
+          action_type: `Reward Redemption: ${reward.name}`,
+          co2_saved: 0, // No CO2 impact for redemptions
+          xp_earned: -reward.xpCost, // Negative XP for spending
+          verification_method: 'System',
+          metadata: {
+            reward_id: reward.id,
+            reward_name: reward.name,
+            redemption_code: Math.random().toString(36).substring(2, 10).toUpperCase()
+          }
+        }]);
+
+      if (ledgerError) {
+        throw new Error(ledgerError.message);
+      }
+
+      // Refresh user data to get updated totals
+      await refreshUserData(currentUser.id);
       setRedeemed(reward);
+
     } catch (err) {
+      console.error('Redemption error:', err);
       setError('Redemption failed: ' + err.message);
     } finally {
       setRedeeming(null);

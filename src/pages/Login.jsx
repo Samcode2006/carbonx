@@ -19,9 +19,21 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
     try {
+      // Validate email domain for vvce.ac.in
+      if (!email.toLowerCase().endsWith('@vvce.ac.in')) {
+        setError('Only @vvce.ac.in email addresses are allowed.');
+        setLoading(false);
+        return;
+      }
+
       if (isSignup) {
-        if (!name.trim()) return setError('Name is required.');
+        if (!name.trim()) {
+          setError('Name is required.');
+          setLoading(false);
+          return;
+        }
         await signup(email, password, name.trim());
       } else {
         await login(email, password);
@@ -111,11 +123,14 @@ export default function Login() {
               <input
                 className="nb-input"
                 type="email"
-                placeholder="you@college.edu"
+                placeholder="you@vvce.ac.in"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
               />
+              <div style={{ fontSize: 11, color: '#666', marginTop: 4, fontWeight: 500 }}>
+                Only @vvce.ac.in emails are allowed
+              </div>
             </div>
 
             <div>

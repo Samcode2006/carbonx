@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { collection, query, where, orderBy, limit, getDocs, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { getLevel, getLevelProgress, getXPToNextLevel, getLevelBadge } from '../utils/xpSystem';
 import { formatCO2 } from '../utils/carbonCalculator';
@@ -44,34 +43,117 @@ export default function Dashboard() {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Real-time actions
-    const q = query(
-      collection(db, 'actions'),
-      where('userId', '==', currentUser.uid),
-      orderBy('timestamp', 'desc'),
-      limit(20)
-    );
-    const unsub = onSnapshot(q, snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setActions(data);
-      buildWeeklyData(data);
-      if (userData) setSuggestions(generateSuggestions(userData, data));
-      setLoading(false);
-    });
-    return unsub;
+    // Fetch recent actions from Supabase
+    const fetchActions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ledger_entries')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (error) {
+          console.error('Error fetching actions:', error);
+          return;
+        }
+
+        // Transform Supabase data to match expected format
+        const transformedActions = data.map(entry => ({
+          id: entry.id,
+          type: getActionTypeFromString(entry.action_type),
+          co2: entry.co2_saved * 1000, // Convert kg to grams for display
+          xp: entry.xp_earned,
+          timestamp: new Date(entry.created_at),
+          verification: entry.verification_method,
+          distance: entry.metadata?.distance_km || null,
+          location: entry.metadata?.location || null,
+        }));
+
+        setActions(transformedActions);
+        buildWeeklyData(transformedActions);
+        if (userData) setSuggestions(generateSuggestions(userData, transformedActions));
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching actions:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchActions();
+
+    // Set up real-time subscription for new entries
+    const subscription = supabase
+      .channel('dashboard_ledger_entries')
+      .on('postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'ledger_entries',
+          filter: `user_id=eq.${currentUser.id}`
+        },
+        (payload) => {
+          const newEntry = payload.new;
+          const transformedEntry = {
+            id: newEntry.id,
+            type: getActionTypeFromString(newEntry.action_type),
+            co2: newEntry.co2_saved * 1000, // Convert kg to grams
+            xp: newEntry.xp_earned,
+            timestamp: new Date(newEntry.created_at),
+            verification: newEntry.verification_method,
+            distance: newEntry.metadata?.distance_km || null,
+            location: newEntry.metadata?.location || null,
+          };
+
+          setActions(prev => [transformedEntry, ...prev.slice(0, 19)]); // Keep only 20 most recent
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [currentUser, userData]);
+
+  // Helper function to extract action type from action_type string
+  const getActionTypeFromString = (actionType) => {
+    if (!actionType) return 'eco-action';
+
+    const type = actionType.toLowerCase();
+    if (type.includes('cycling') || type.includes('ride') || type.includes('bike')) return 'cycling';
+    if (type.includes('bus') || type.includes('transport')) return 'bus';
+    if (type.includes('recycling') || type.includes('recycle')) return 'recycling';
+    if (type.includes('walk') || type.includes('walking')) return 'walking';
+    if (type.includes('run') || type.includes('running')) return 'running';
+
+    return 'eco-action';
+  };
 
   // Fetch rank
   useEffect(() => {
     if (!userData) return;
-    getDocs(collection(db, 'users')).then(snap => {
-      const sorted = snap.docs
-        .map(d => d.data())
-        .sort((a, b) => (b.xp || 0) - (a.xp || 0));
-      const idx = sorted.findIndex(u => u.email === userData.email);
-      setRank(idx >= 0 ? `#${idx + 1}` : '—');
-    });
-  }, [userData]);
+
+    const fetchRank = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, total_xp')
+          .order('total_xp', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching leaderboard:', error);
+          return;
+        }
+
+        const userIndex = data.findIndex(user => user.id === currentUser.id);
+        setRank(userIndex >= 0 ? `#${userIndex + 1}` : '—');
+      } catch (error) {
+        console.error('Error fetching rank:', error);
+      }
+    };
+
+    fetchRank();
+  }, [userData, currentUser]);
 
   function buildWeeklyData(data) {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -80,7 +162,7 @@ export default function Dashboard() {
     days.forEach(d => weekMap[d] = 0);
     data.forEach(a => {
       if (!a.timestamp) return;
-      const ts = a.timestamp.toDate?.() || new Date(a.timestamp);
+      const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
       const diff = (now - ts) / (1000 * 60 * 60 * 24);
       if (diff <= 7) {
         const day = days[ts.getDay()];
@@ -147,7 +229,7 @@ export default function Dashboard() {
           <StatCard icon={<Trophy size={22} />} label="Rank" value={rank} sub={`out of ${rank !== '—' ? rank.replace('#', '') + '+ users' : 'users'}`} color="#FB7185" />
           <StatCard icon={<Target size={22} />} label="Actions" value={actions.length} sub={`${actions.filter(a => {
             if (!a.timestamp) return false;
-            const ts = a.timestamp.toDate?.() || new Date(a.timestamp);
+            const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
             return (Date.now() - ts) < 86400000;
           }).length} today`} color="#60A5FA" />
         </div>
@@ -217,13 +299,13 @@ export default function Dashboard() {
                 </thead>
                 <tbody>
                   {actions.slice(0, 10).map(a => {
-                    const icons = { cycling: '🚴', bus: '🚌', recycling: '♻️' };
-                    const ts = a.timestamp?.toDate?.() || new Date(a.timestamp);
+                    const icons = { cycling: '🚴', bus: '🚌', recycling: '♻️', walking: '🚶', running: '🏃', 'eco-action': '🌱' };
+                    const ts = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
                     return (
                       <tr key={a.id}>
                         <td style={{ fontWeight: 700 }}>{icons[a.type] || '🌱'} {a.type}</td>
-                        <td><span style={{ background: '#A3E635', border: '1px solid #000', borderRadius: 4, padding: '2px 8px', fontWeight: 800, fontSize: 13 }}>{a.co2}g</span></td>
-                        <td><span style={{ background: '#FDE047', border: '1px solid #000', borderRadius: 4, padding: '2px 8px', fontWeight: 800, fontSize: 13 }}>+{a.co2}</span></td>
+                        <td><span style={{ background: '#A3E635', border: '1px solid #000', borderRadius: 4, padding: '2px 8px', fontWeight: 800, fontSize: 13 }}>{Math.round(a.co2)}g</span></td>
+                        <td><span style={{ background: '#FDE047', border: '1px solid #000', borderRadius: 4, padding: '2px 8px', fontWeight: 800, fontSize: 13 }}>+{a.xp}</span></td>
                         <td style={{ color: '#666', fontSize: 13 }}>{ts.toLocaleDateString()}</td>
                         <td style={{ fontSize: 12, color: '#888' }}>{a.location ? `${a.location.lat?.toFixed(3)}, ${a.location.lng?.toFixed(3)}` : '—'}</td>
                       </tr>

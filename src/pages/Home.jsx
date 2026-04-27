@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { getLevel, getLevelBadge } from '../utils/xpSystem';
+import { connectStrava, checkStravaConnection, handleStravaCallback } from '../utils/stravaIntegration';
 
 const features = [
   { icon: '📸', title: 'Upload Actions', desc: 'Submit proof of your eco-friendly actions — cycling, bus rides, recycling.', color: '#A3E635' },
@@ -28,9 +29,29 @@ function FloatingEco({ icon, x, y, delay, duration }) {
 }
 
 export default function Home() {
-  const { userData } = useAuth();
+  const { userData, currentUser } = useAuth();
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [checkingStrava, setCheckingStrava] = useState(true);
   const heroRef = useRef(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
+
+  // Check if Strava is connected
+  useEffect(() => {
+    if (currentUser) {
+      checkStravaConnection(currentUser.id).then(({ connected }) => {
+        setStravaConnected(connected);
+        setCheckingStrava(false);
+      });
+
+      // Handle OAuth callback if returning from Strava
+      handleStravaCallback(currentUser.id).then((result) => {
+        if (result.success) {
+          setStravaConnected(true);
+          alert('✅ Strava connected successfully!');
+        }
+      });
+    }
+  }, [currentUser]);
 
   // Parallax transforms
   const bgY = useTransform(scrollYProgress, [0, 1], ['0%', '40%']);
@@ -102,6 +123,38 @@ export default function Home() {
                   <Link to="/leaderboard" className="nb-btn nb-btn-white" style={{ fontSize: 15, padding: '14px 28px' }}>
                     🏆 View Leaderboard
                   </Link>
+                  {!checkingStrava && !stravaConnected && (
+                    <button
+                      onClick={() => connectStrava(window.location.origin)}
+                      className="nb-btn"
+                      style={{
+                        fontSize: 15,
+                        padding: '14px 28px',
+                        background: '#FC4C02',
+                        color: '#fff',
+                        border: '2px solid #000'
+                      }}
+                    >
+                      🚴 Connect Strava
+                    </button>
+                  )}
+                  {stravaConnected && (
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      background: '#FC4C02',
+                      color: '#fff',
+                      border: '2px solid #000',
+                      borderRadius: 8,
+                      padding: '14px 28px',
+                      fontWeight: 800,
+                      fontSize: 15,
+                      boxShadow: '3px 3px 0px #000'
+                    }}>
+                      ✅ Strava Connected
+                    </div>
+                  )}
                 </div>
 
                 {userData && (

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { getLevelBadge, getLevel } from '../utils/xpSystem';
 import { formatCO2 } from '../utils/carbonCalculator';
@@ -18,17 +17,61 @@ export default function Leaderboard() {
   const [dept, setDept] = useState('All');
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), orderBy('xp', 'desc'));
-    const unsub = onSnapshot(q, snap => {
-      const data = snap.docs.map((d, i) => ({
-        id: d.id,
-        ...d.data(),
-        dept: MOCK_DEPARTMENTS[i % MOCK_DEPARTMENTS.length],
-      }));
-      setUsers(data);
-      setLoading(false);
-    });
-    return unsub;
+    // Fetch users from Supabase leaderboard view
+    const fetchLeaderboard = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, display_name, department, total_xp, total_co2_saved, created_at')
+          .order('total_xp', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching leaderboard:', error);
+          setUsers([]);
+          setLoading(false);
+          return;
+        }
+
+        // Transform Supabase data to match expected format
+        const transformedUsers = (data || []).map((user, i) => ({
+          id: user.id,
+          name: user.display_name || 'Anonymous',
+          xp: user.total_xp || 0,
+          co2Saved: user.total_co2_saved || 0,
+          level: Math.floor((user.total_xp || 0) / 100) + 1, // Calculate level from XP
+          dept: user.department || MOCK_DEPARTMENTS[i % MOCK_DEPARTMENTS.length], // Use department or fallback
+          createdAt: user.created_at,
+        }));
+
+        setUsers(transformedUsers);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchLeaderboard();
+
+    // Set up real-time subscription for leaderboard updates
+    const subscription = supabase
+      .channel('leaderboard_updates')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'users'
+        },
+        () => {
+          // Refetch leaderboard when users table changes
+          fetchLeaderboard();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const filtered = dept === 'All' ? users : users.filter(u => u.dept === dept);
@@ -44,7 +87,7 @@ export default function Leaderboard() {
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32, textAlign: 'center' }}>
           <h1 className="nb-heading" style={{ marginBottom: 8 }}>🏆 Live Leaderboard</h1>
-          <p className="nb-subheading">Real-time rankings — updated live from Firestore</p>
+          <p className="nb-subheading">Real-time rankings — updated live from Supabase</p>
         </motion.div>
 
         {/* Department Filter */}
@@ -83,7 +126,7 @@ export default function Leaderboard() {
                   const rank = podiumIdx === 0 ? 2 : podiumIdx === 1 ? 1 : 3;
                   const height = rank === 1 ? 200 : rank === 2 ? 160 : 140;
                   const color = PODIUM_COLORS[rank - 1];
-                  const isMe = u.id === currentUser?.uid;
+                  const isMe = u.id === currentUser?.id;
                   return (
                     <motion.div
                       key={u.id}
@@ -135,7 +178,7 @@ export default function Leaderboard() {
                     </thead>
                     <tbody>
                       {filtered.map((u, i) => {
-                        const isMe = u.id === currentUser?.uid;
+                        const isMe = u.id === currentUser?.id;
                         const lvl = getLevel(u.xp || 0);
                         return (
                           <motion.tr key={u.id}
