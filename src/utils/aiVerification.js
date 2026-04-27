@@ -1,8 +1,7 @@
 /**
- * AI Verification — now routes through Firebase Cloud Function.
- * The Gemini API key lives ONLY on the server. Never exposed to browser.
+ * AI Verification - Client-side fallback
+ * TODO: Implement Gemini AI verification via Supabase Edge Function
  */
-import { verifyEcoActionFn } from '../firebase';
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -29,28 +28,13 @@ export async function verifyAction(file, actionType) {
   await new Promise(r => setTimeout(r, 1500));
 
   try {
-    // Only send image files to Gemini (videos use fallback — Gemini Flash supports images best)
-    let imageBase64 = null;
-    let mimeType = null;
-
-    if (file && file.type.startsWith('image/')) {
-      imageBase64 = await fileToBase64(file);
-      mimeType = file.type;
-    }
-
-    // Call the Cloud Function — Gemini key stays on server
-    const result = await verifyEcoActionFn({
-      imageBase64,
-      mimeType,
-      filename: file?.name || '',
-      actionType,
-    });
-
-    return result.data;
+    // For now, use client-side fallback
+    // In production, this would call Gemini AI via Supabase Edge Function
+    console.log('AI Verification using client fallback for:', actionType);
+    return clientFallback(file?.name || '', actionType);
 
   } catch (err) {
-    console.warn('Cloud Function call failed, using client fallback:', err.message);
-    // If function not deployed yet, use client-side fallback
+    console.warn('Verification failed, using fallback:', err.message);
     return clientFallback(file?.name || '', actionType);
   }
 }

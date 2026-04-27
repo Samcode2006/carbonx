@@ -41,7 +41,15 @@ export default function Dashboard() {
   const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+
+    // Set a timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 5000); // 5 second timeout
 
     // Fetch recent actions from Supabase
     const fetchActions = async () => {
@@ -55,11 +63,14 @@ export default function Dashboard() {
 
         if (error) {
           console.error('Error fetching actions:', error);
+          setActions([]);
+          setLoading(false);
+          clearTimeout(timeout);
           return;
         }
 
         // Transform Supabase data to match expected format
-        const transformedActions = data.map(entry => ({
+        const transformedActions = (data || []).map(entry => ({
           id: entry.id,
           type: getActionTypeFromString(entry.action_type),
           co2: entry.co2_saved * 1000, // Convert kg to grams for display
@@ -74,9 +85,12 @@ export default function Dashboard() {
         buildWeeklyData(transformedActions);
         if (userData) setSuggestions(generateSuggestions(userData, transformedActions));
         setLoading(false);
+        clearTimeout(timeout);
       } catch (error) {
         console.error('Error fetching actions:', error);
+        setActions([]);
         setLoading(false);
+        clearTimeout(timeout);
       }
     };
 
